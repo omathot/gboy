@@ -117,13 +117,30 @@ pub enum ArithmeticTarget {
 	L,
 }
 
+struct MemoryBus {
+	memory: [u8; 0xFFFF],
+}
+
+impl MemoryBus {
+	pub fn new() -> MemoryBus {
+		MemoryBus {
+			memory: [0; 0xFFFF],
+		}
+	}
+	fn read_byte(&self, address: u16) -> u8 {
+		self.memory[address as usize]
+	}
+}
+
 pub struct CPU {
 	registers: Registers,
+	bus: MemoryBus,
 }
 impl CPU {
 	pub fn new() -> CPU {
 		CPU {
 			registers: Registers::new(),
+			bus: MemoryBus::new(),
 		}
 	}
 	fn execute(&mut self, instruction: Instruction) {
@@ -203,6 +220,14 @@ impl CPU {
 				}
 			},
 			Instruction::AddHL => self.add_hl(),
+			Instruction::Subtract(target) => match target {
+				ArithmeticTarget::A => {
+					let value = self.registers.a;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				_ => {}
+			},
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -228,8 +253,18 @@ impl CPU {
 	}
 	fn add_hl(&mut self) {
 		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
-		// TODO: read from memory
-		// let value =
+		let value = self.bus.read_byte(addr);
+		let new_v = self.add(value);
+		self.registers.a = new_v;
+	}
+	fn subtract(&mut self, value: u8) -> u8 {
+		let (new_v, overflow) = self.registers.a.overflowing_sub(value);
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = true;
+		self.registers.f.carry = overflow;
+		self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+
+		new_v
 	}
 }
 
