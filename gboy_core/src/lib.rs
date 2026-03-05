@@ -100,17 +100,28 @@ impl Registers {
 }
 
 pub enum Instruction {
-	Add(ArithmeticTarget),
-	AddCarry(ArithmeticTarget),
-	AddHL,
-	Subtract(ArithmeticTarget),
-	SubtractCarry(ArithmeticTarget),
-	SubHL,
-	And(ArithmeticTarget),
-	AndHL,
-	Or(ArithmeticTarget),
-	OrHL,
-	Compare(ArithmeticTarget),
+	ADD(ArithmeticTarget),
+	ADDC(ArithmeticTarget),
+	ADDHL,
+	SUB(ArithmeticTarget),
+	SUBC(ArithmeticTarget),
+	SUBHL,
+	AND(ArithmeticTarget),
+	ANDHL,
+	OR(ArithmeticTarget),
+	ORHL,
+	XOR(ArithmeticTarget),
+	XORHL,
+	CMP(ArithmeticTarget),
+	CMPHL,
+	INC(ArithmeticTarget),
+	INCHL,
+	DEC(ArithmeticTarget),
+	DECHL,
+	CCF,
+	SCF,
+	RRA,
+	RLA,
 }
 pub enum ArithmeticTarget {
 	A,
@@ -123,16 +134,30 @@ pub enum ArithmeticTarget {
 }
 
 struct MemoryBus {
-	memory: [u8; 0xFFFF],
+	memory: [u8; 0xFFFF + 1],
 }
 impl MemoryBus {
 	pub fn new() -> MemoryBus {
 		MemoryBus {
-			memory: [0; 0xFFFF],
+			memory: [0; 0xFFFF + 1],
 		}
 	}
-	fn read_byte(&self, address: u16) -> u8 {
-		self.memory[address as usize]
+	fn read_byte(&self, addr: u16) -> u8 {
+		self.memory[addr as usize]
+	}
+	fn write_byte(&mut self, addr: u16, value: u8) {
+		match addr {
+			0x0000..=0x7FFF => { /* ROM */ }
+			0x8000..=0x9FFF => { /* vram */ }
+			0xC000..=0xDFFF => { /* wram */ }
+			0xE000..=0xFDFF => { /* echo ram */ }
+			0xFE00..=0xFE9F => { /* OAM sprite table */ }
+			0xFF00..=0xFF7F => { /* io_registers */ }
+			0xFF80..=0xFFFE => { /* High ram */ }
+			0xFFFF => { /* interrupt */ }
+			_ => {}
+		}
+		self.memory[addr as usize] = value;
 	}
 }
 
@@ -149,7 +174,7 @@ impl CPU {
 	}
 	fn execute(&mut self, instruction: Instruction) {
 		match instruction {
-			Instruction::Add(target) => match target {
+			Instruction::ADD(target) => match target {
 				ArithmeticTarget::A => {
 					let value = self.registers.a;
 					let new_v = self.add(value);
@@ -186,7 +211,7 @@ impl CPU {
 					self.registers.a = new_v;
 				}
 			},
-			Instruction::AddCarry(target) => match target {
+			Instruction::ADDC(target) => match target {
 				ArithmeticTarget::A => {
 					let value = self.registers.a;
 					let new_v = self.add_carry(value);
@@ -223,8 +248,8 @@ impl CPU {
 					self.registers.a = new_v;
 				}
 			},
-			Instruction::AddHL => self.add_hl(),
-			Instruction::Subtract(target) => match target {
+			Instruction::ADDHL => self.add_hl(),
+			Instruction::SUB(target) => match target {
 				ArithmeticTarget::A => {
 					let value = self.registers.a;
 					let new_v = self.subtract(value);
@@ -261,7 +286,7 @@ impl CPU {
 					self.registers.a = new_v;
 				}
 			},
-			Instruction::SubtractCarry(target) => match target {
+			Instruction::SUBC(target) => match target {
 				ArithmeticTarget::A => {
 					let value = self.registers.a;
 					let new_v = self.subtract_carry(value);
@@ -298,8 +323,8 @@ impl CPU {
 					self.registers.a = new_v;
 				}
 			},
-			Instruction::SubHL => self.subtract_hl(),
-			Instruction::And(target) => match target {
+			Instruction::SUBHL => self.subtract_hl(),
+			Instruction::AND(target) => match target {
 				ArithmeticTarget::A => self.and(self.registers.a),
 				ArithmeticTarget::B => self.and(self.registers.b),
 				ArithmeticTarget::C => self.and(self.registers.c),
@@ -308,8 +333,8 @@ impl CPU {
 				ArithmeticTarget::H => self.and(self.registers.h),
 				ArithmeticTarget::L => self.and(self.registers.l),
 			},
-			Instruction::AndHL => self.and_hl(),
-			Instruction::Or(target) => match target {
+			Instruction::ANDHL => self.and_hl(),
+			Instruction::OR(target) => match target {
 				ArithmeticTarget::A => self.or(self.registers.a),
 				ArithmeticTarget::B => self.or(self.registers.b),
 				ArithmeticTarget::C => self.or(self.registers.c),
@@ -318,7 +343,91 @@ impl CPU {
 				ArithmeticTarget::H => self.or(self.registers.h),
 				ArithmeticTarget::L => self.or(self.registers.l),
 			},
-			Instruction::OrHL => self.or_hl(),
+			Instruction::ORHL => self.or_hl(),
+			Instruction::XOR(target) => match target {
+				ArithmeticTarget::A => self.xor(self.registers.a),
+				ArithmeticTarget::B => self.xor(self.registers.b),
+				ArithmeticTarget::C => self.xor(self.registers.c),
+				ArithmeticTarget::D => self.xor(self.registers.d),
+				ArithmeticTarget::E => self.xor(self.registers.e),
+				ArithmeticTarget::H => self.xor(self.registers.h),
+				ArithmeticTarget::L => self.xor(self.registers.l),
+			},
+			Instruction::XORHL => self.xor_hl(),
+			Instruction::CMP(target) => match target {
+				ArithmeticTarget::A => self.cmp(self.registers.a),
+				ArithmeticTarget::B => self.cmp(self.registers.b),
+				ArithmeticTarget::C => self.cmp(self.registers.c),
+				ArithmeticTarget::D => self.cmp(self.registers.d),
+				ArithmeticTarget::E => self.cmp(self.registers.e),
+				ArithmeticTarget::H => self.cmp(self.registers.h),
+				ArithmeticTarget::L => self.cmp(self.registers.l),
+			},
+			Instruction::CMPHL => self.cmp_hl(),
+			Instruction::INC(target) => match target {
+				ArithmeticTarget::A => {
+					let new_v = self.inc(self.registers.a);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::B => {
+					let new_v = self.inc(self.registers.b);
+					self.registers.b = new_v;
+				}
+				ArithmeticTarget::C => {
+					let new_v = self.inc(self.registers.c);
+					self.registers.c = new_v;
+				}
+				ArithmeticTarget::D => {
+					let new_v = self.inc(self.registers.d);
+					self.registers.d = new_v;
+				}
+				ArithmeticTarget::E => {
+					let new_v = self.inc(self.registers.e);
+					self.registers.e = new_v;
+				}
+				ArithmeticTarget::H => {
+					let new_v = self.inc(self.registers.h);
+					self.registers.h = new_v;
+				}
+				ArithmeticTarget::L => {
+					let new_v = self.inc(self.registers.l);
+					self.registers.l = new_v;
+				}
+			},
+			Instruction::INCHL => self.inc_hl(),
+			Instruction::DEC(target) => match target {
+				ArithmeticTarget::A => {
+					let new_v = self.dec(self.registers.a);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::B => {
+					let new_v = self.dec(self.registers.b);
+					self.registers.b = new_v;
+				}
+				ArithmeticTarget::C => {
+					let new_v = self.dec(self.registers.c);
+					self.registers.c = new_v;
+				}
+				ArithmeticTarget::D => {
+					let new_v = self.dec(self.registers.d);
+					self.registers.d = new_v;
+				}
+				ArithmeticTarget::E => {
+					let new_v = self.dec(self.registers.e);
+					self.registers.e = new_v;
+				}
+				ArithmeticTarget::H => {
+					let new_v = self.dec(self.registers.h);
+					self.registers.h = new_v;
+				}
+				ArithmeticTarget::L => {
+					let new_v = self.dec(self.registers.l);
+					self.registers.l = new_v;
+				}
+			},
+			Instruction::DECHL => self.dec_hl(),
+			Instruction::CCF => self.registers.f.carry = !self.registers.f.carry,
+			Instruction::SCF => self.registers.f.carry = true,
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -397,6 +506,52 @@ impl CPU {
 		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
 		let value = self.bus.read_byte(addr);
 		self.or(value);
+	}
+	fn xor(&mut self, value: u8) {
+		self.registers.a ^= value;
+		self.registers.f.zero = self.registers.a == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = false;
+		self.registers.f.half_carry = false;
+	}
+	fn xor_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		self.xor(value);
+	}
+	fn cmp(&mut self, value: u8) {
+		self.subtract(value);
+	}
+	fn cmp_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		self.subtract(value);
+	}
+	fn inc(&mut self, value: u8) -> u8 {
+		let new_v = value.wrapping_add(1);
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.half_carry = (value & 0xF) == 0xF;
+		new_v
+	}
+	fn inc_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		let new_v = self.inc(value);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn dec(&mut self, value: u8) -> u8 {
+		let new_v = value.wrapping_sub(1);
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = true;
+		self.registers.f.half_carry = (value & 0xF) == 0x0;
+		new_v
+	}
+	fn dec_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		let new_v = self.dec(value);
+		self.bus.write_byte(addr, new_v);
 	}
 }
 
