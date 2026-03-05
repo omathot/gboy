@@ -1,9 +1,10 @@
 /*
-	-Sharp LR35902
+	-cpu: Sharp LR35902
 */
 
-const SCREEN_WIDTH: usize = 240;
-const SCREEN_HEIGHT: usize = 160;
+// 20x18 tiles
+const SCREEN_WIDTH: usize = 160;
+const SCREEN_HEIGHT: usize = 144;
 
 const NUM_KEYS: usize = 10;
 
@@ -99,7 +100,12 @@ impl Registers {
 }
 
 pub enum Instruction {
-	ADD(ArithmeticTarget),
+	Add(ArithmeticTarget),
+	AddCarry(ArithmeticTarget),
+	AddHL,
+	Subtract(ArithmeticTarget),
+	SubtractCarry(ArithmeticTarget),
+	Compare(ArithmeticTarget),
 }
 pub enum ArithmeticTarget {
 	A,
@@ -119,6 +125,111 @@ impl CPU {
 		CPU {
 			registers: Registers::new(),
 		}
+	}
+	fn execute(&mut self, instruction: Instruction) {
+		match instruction {
+			Instruction::Add(target) => match target {
+				ArithmeticTarget::A => {
+					let value = self.registers.a;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::B => {
+					let value = self.registers.b;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::C => {
+					let value = self.registers.c;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::D => {
+					let value = self.registers.d;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::E => {
+					let value = self.registers.e;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::H => {
+					let value = self.registers.h;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::L => {
+					let value = self.registers.l;
+					let new_v = self.add(value);
+					self.registers.a = new_v;
+				}
+			},
+			Instruction::AddCarry(target) => match target {
+				ArithmeticTarget::A => {
+					let value = self.registers.a;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::B => {
+					let value = self.registers.b;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::C => {
+					let value = self.registers.c;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::D => {
+					let value = self.registers.d;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::E => {
+					let value = self.registers.e;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::H => {
+					let value = self.registers.h;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::L => {
+					let value = self.registers.l;
+					let new_v = self.add_carry(value);
+					self.registers.a = new_v;
+				}
+			},
+			Instruction::AddHL => self.add_hl(),
+			// TODO: support more insturctions
+			_ => {}
+		}
+	}
+	fn add(&mut self, value: u8) -> u8 {
+		let (new_value, did_overflow) = self.registers.a.overflowing_add(value);
+		self.registers.f.zero = new_value == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = did_overflow;
+		self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
+		new_value
+	}
+	fn add_carry(&mut self, value: u8) -> u8 {
+		let carry = self.registers.f.carry as u8;
+		let (v1, overflow1) = self.registers.a.overflowing_add(value);
+		let (v2, overflow2) = v1.overflowing_add(carry);
+
+		self.registers.f.zero = v2 == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = overflow1 | overflow2;
+		self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) + carry > 0xF;
+		v2
+	}
+	fn add_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		// TODO: read from memory
+		// let value =
 	}
 }
 
