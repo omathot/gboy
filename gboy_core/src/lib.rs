@@ -105,6 +105,11 @@ pub enum Instruction {
 	AddHL,
 	Subtract(ArithmeticTarget),
 	SubtractCarry(ArithmeticTarget),
+	SubHL,
+	And(ArithmeticTarget),
+	AndHL,
+	Or(ArithmeticTarget),
+	OrHL,
 	Compare(ArithmeticTarget),
 }
 pub enum ArithmeticTarget {
@@ -120,7 +125,6 @@ pub enum ArithmeticTarget {
 struct MemoryBus {
 	memory: [u8; 0xFFFF],
 }
-
 impl MemoryBus {
 	pub fn new() -> MemoryBus {
 		MemoryBus {
@@ -226,8 +230,95 @@ impl CPU {
 					let new_v = self.subtract(value);
 					self.registers.a = new_v;
 				}
-				_ => {}
+				ArithmeticTarget::B => {
+					let value = self.registers.b;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::C => {
+					let value = self.registers.c;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::D => {
+					let value = self.registers.d;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::E => {
+					let value = self.registers.e;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::H => {
+					let value = self.registers.h;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::L => {
+					let value = self.registers.l;
+					let new_v = self.subtract(value);
+					self.registers.a = new_v;
+				}
 			},
+			Instruction::SubtractCarry(target) => match target {
+				ArithmeticTarget::A => {
+					let value = self.registers.a;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::B => {
+					let value = self.registers.b;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::C => {
+					let value = self.registers.c;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::D => {
+					let value = self.registers.d;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::E => {
+					let value = self.registers.e;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::H => {
+					let value = self.registers.h;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+				ArithmeticTarget::L => {
+					let value = self.registers.l;
+					let new_v = self.subtract_carry(value);
+					self.registers.a = new_v;
+				}
+			},
+			Instruction::SubHL => self.subtract_hl(),
+			Instruction::And(target) => match target {
+				ArithmeticTarget::A => self.and(self.registers.a),
+				ArithmeticTarget::B => self.and(self.registers.b),
+				ArithmeticTarget::C => self.and(self.registers.c),
+				ArithmeticTarget::D => self.and(self.registers.d),
+				ArithmeticTarget::E => self.and(self.registers.e),
+				ArithmeticTarget::H => self.and(self.registers.h),
+				ArithmeticTarget::L => self.and(self.registers.l),
+			},
+			Instruction::AndHL => self.and_hl(),
+			Instruction::Or(target) => match target {
+				ArithmeticTarget::A => self.or(self.registers.a),
+				ArithmeticTarget::B => self.or(self.registers.b),
+				ArithmeticTarget::C => self.or(self.registers.c),
+				ArithmeticTarget::D => self.or(self.registers.d),
+				ArithmeticTarget::E => self.or(self.registers.e),
+				ArithmeticTarget::H => self.or(self.registers.h),
+				ArithmeticTarget::L => self.or(self.registers.l),
+			},
+			Instruction::OrHL => self.or_hl(),
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -265,6 +356,47 @@ impl CPU {
 		self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
 
 		new_v
+	}
+	fn subtract_carry(&mut self, value: u8) -> u8 {
+		let carry = self.registers.f.carry as u8;
+
+		let (v1, overflow1) = self.registers.a.overflowing_sub(value);
+		let (v2, overflow2) = v1.overflowing_sub(carry);
+		self.registers.f.zero = v2 == 0;
+		self.registers.f.subtract = true;
+		self.registers.f.carry = overflow1 | overflow2;
+		self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+		v2
+	}
+	fn subtract_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		let new_v = self.subtract(value);
+		self.registers.a = new_v;
+	}
+	fn and(&mut self, value: u8) {
+		self.registers.a &= value;
+		self.registers.f.zero = self.registers.a == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = false;
+		self.registers.f.half_carry = true; // always true for &. just what the spec states, no explanation
+	}
+	fn or(&mut self, value: u8) {
+		self.registers.a |= value;
+		self.registers.f.zero = self.registers.a == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = false;
+		self.registers.f.half_carry = false;
+	}
+	fn and_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		self.and(value);
+	}
+	fn or_hl(&mut self) {
+		let addr: u16 = (self.registers.h as u16) << 8 | self.registers.l as u16;
+		let value = self.bus.read_byte(addr);
+		self.or(value);
 	}
 }
 
