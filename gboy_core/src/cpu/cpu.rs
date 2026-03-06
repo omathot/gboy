@@ -160,6 +160,24 @@ impl CPU {
 				self.registers.set(&target, new_v);
 			}
 			Instruction::RLCHL => self.rlc_hl(),
+			Instruction::SRA(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.sra(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::SRAHL => self.sra_hl(),
+			Instruction::SLA(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.sla(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::SLAHL => self.sla_hl(),
+			Instruction::SWAP(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.swap(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::SWAPHL => self.swap_hl(),
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -441,6 +459,56 @@ impl CPU {
 		let addr = self.registers.get_hl();
 		let v = self.bus.read_byte(addr);
 		let new_v = self.rlc(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn sra(&mut self, value: u8) -> u8 {
+		let bit7 = value & 0x80;
+		let new_carry = value & 0x1;
+		let new_v = (value >> 1) | bit7;
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = new_carry != 0;
+		self.registers.f.half_carry = false;
+		new_v
+	}
+	fn sra_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.sra(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn sla(&mut self, value: u8) -> u8 {
+		let new_carry = value & 0x80;
+		let new_v = value << 1;
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = new_carry != 0;
+		self.registers.f.half_carry = false;
+		new_v
+	}
+	fn sla_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.sla(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn swap(&mut self, value: u8) -> u8 {
+		let high = value >> 4;
+		let low = value & 0x0F;
+		let new_v = (low << 4) | high;
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = false;
+		self.registers.f.half_carry = false;
+		new_v
+	}
+	fn swap_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.swap(v);
 		self.bus.write_byte(addr, new_v);
 	}
 }

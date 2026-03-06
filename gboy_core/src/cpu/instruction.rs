@@ -44,6 +44,8 @@ pub(crate) enum Instruction {
 	SRAHL,
 	SLA(ArithmeticTarget),
 	SLAHL,
+	SWAP(ArithmeticTarget),
+	SWAPHL,
 }
 pub(crate) enum ArithmeticTarget {
 	A,
