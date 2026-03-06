@@ -39,14 +39,14 @@ impl MemoryBus {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FlagsRegister {
+struct FlagsRegister {
 	zero: bool,
 	subtract: bool,
 	half_carry: bool,
 	carry: bool,
 }
 impl FlagsRegister {
-	pub fn new() -> FlagsRegister {
+	fn new() -> FlagsRegister {
 		FlagsRegister {
 			zero: false,
 			subtract: false,
@@ -79,7 +79,7 @@ impl std::convert::From<u8> for FlagsRegister {
 	}
 }
 
-pub struct Registers {
+struct Registers {
 	a: u8,
 	b: u8,
 	c: u8,
@@ -102,44 +102,46 @@ impl Registers {
 			l: 0,
 		}
 	}
-	pub fn get_af(&self) -> u16 {
+	fn get_af(&self) -> u16 {
 		(self.a as u16) << 8 | u8::from(self.f) as u16
 	}
-	pub fn get_bc(&self) -> u16 {
+	fn get_bc(&self) -> u16 {
 		(self.b as u16) << 8 | self.c as u16
 	}
-	pub fn get_de(&self) -> u16 {
+	fn get_de(&self) -> u16 {
 		(self.d as u16) << 8 | self.e as u16
 	}
-	pub fn get_hl(&self) -> u16 {
+	fn get_hl(&self) -> u16 {
 		(self.h as u16) << 8 | self.l as u16
 	}
-	pub fn set_af(&mut self, value: u16) {
+	fn set_af(&mut self, value: u16) {
 		self.a = ((value & 0xFF00) >> 8) as u8;
 		self.f = FlagsRegister::from((value & 0xFF) as u8);
 	}
-	pub fn set_bc(&mut self, value: u16) {
+	fn set_bc(&mut self, value: u16) {
 		self.b = ((value & 0xFF00) >> 8) as u8;
 		self.c = (value & 0xFF) as u8;
 	}
-	pub fn set_de(&mut self, value: u16) {
+	fn set_de(&mut self, value: u16) {
 		self.d = ((value & 0xFF00) >> 8) as u8;
 		self.e = (value & 0xFF) as u8;
 	}
-	pub fn set_hl(&mut self, value: u16) {
+	fn set_hl(&mut self, value: u16) {
 		self.h = ((value & 0xFF00) >> 8) as u8;
 		self.l = (value & 0xFF) as u8;
 	}
 }
-pub struct CPU {
+pub(crate) struct CPU {
 	registers: Registers,
 	bus: MemoryBus,
+	pc: u16,
 }
 impl CPU {
 	pub fn new() -> CPU {
 		CPU {
 			registers: Registers::new(),
 			bus: MemoryBus::new(),
+			pc: 0,
 		}
 	}
 	fn execute(&mut self, instruction: Instruction) {
@@ -406,6 +408,45 @@ impl CPU {
 				self.registers.f.subtract = false;
 				self.registers.f.half_carry = false;
 			}
+			Instruction::RRA => self.rra(),
+			Instruction::RLA => self.rla(),
+			Instruction::RRCA => self.rrca(),
+			Instruction::RLCA => self.rlca(),
+			Instruction::CPL => self.cpl(),
+			Instruction::BIT(idx, target) => match target {
+				ArithmeticTarget::A => self.bit(idx, self.registers.a),
+				ArithmeticTarget::B => self.bit(idx, self.registers.b),
+				ArithmeticTarget::C => self.bit(idx, self.registers.c),
+				ArithmeticTarget::D => self.bit(idx, self.registers.d),
+				ArithmeticTarget::E => self.bit(idx, self.registers.e),
+				ArithmeticTarget::H => self.bit(idx, self.registers.h),
+				ArithmeticTarget::L => self.bit(idx, self.registers.l),
+			},
+			Instruction::BITHL(idx) => self.bit_hl(idx),
+			Instruction::RESET(idx, target) => match target {
+				ArithmeticTarget::A => self.registers.a = self.reset(idx, self.registers.a),
+				ArithmeticTarget::B => self.registers.b = self.reset(idx, self.registers.b),
+				ArithmeticTarget::C => self.registers.c = self.reset(idx, self.registers.c),
+				ArithmeticTarget::D => self.registers.d = self.reset(idx, self.registers.d),
+				ArithmeticTarget::E => self.registers.e = self.reset(idx, self.registers.e),
+				ArithmeticTarget::H => self.registers.h = self.reset(idx, self.registers.h),
+				ArithmeticTarget::L => self.registers.l = self.reset(idx, self.registers.l),
+			},
+			Instruction::RESETHL(idx) => self.reset_hl(idx),
+			Instruction::SET(idx, target) => match target {
+				ArithmeticTarget::A => self.registers.a = self.set(idx, self.registers.a),
+				ArithmeticTarget::B => self.registers.b = self.set(idx, self.registers.b),
+				ArithmeticTarget::C => self.registers.c = self.set(idx, self.registers.c),
+				ArithmeticTarget::D => self.registers.d = self.set(idx, self.registers.d),
+				ArithmeticTarget::E => self.registers.e = self.set(idx, self.registers.e),
+				ArithmeticTarget::H => self.registers.h = self.set(idx, self.registers.h),
+				ArithmeticTarget::L => self.registers.l = self.set(idx, self.registers.l),
+			},
+			Instruction::SETHL(idx) => self.set_hl(idx),
+			Instruction::SRL(target) => match target {
+				ArithmeticTarget::A => self.srl(self.registers.a),
+				_ => {}
+			},
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -531,4 +572,81 @@ impl CPU {
 		let new_v = self.dec(value);
 		self.bus.write_byte(addr, new_v);
 	}
+	fn rra(&mut self) {
+		let old_carry = self.registers.f.carry as u8;
+		let new_carry = self.registers.a & 0x1; // bit 0 falls
+
+		self.registers.a = (self.registers.a >> 1) | (old_carry << 7);
+		self.registers.f.zero = false;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = new_carry != 0;
+		self.registers.f.half_carry = false;
+	}
+	fn rla(&mut self) {
+		let old_carry = self.registers.f.carry as u8;
+		let new_carry = self.registers.a & 0x8; // bit 7 falls
+
+		self.registers.a = (self.registers.a << 1) | old_carry;
+		self.registers.f.zero = false;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = new_carry != 0;
+		self.registers.f.half_carry = false;
+	}
+	fn rrca(&mut self) {
+		let bit0 = self.registers.a & 0x1;
+		self.registers.a = (self.registers.a >> 1) | (bit0 << 7);
+		self.registers.f.zero = false;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = bit0 != 0;
+		self.registers.f.half_carry = false;
+	}
+	fn rlca(&mut self) {
+		let bit7 = self.registers.a & 0x8;
+		self.registers.a = (self.registers.a << 1) | (bit7 >> 7);
+		self.registers.f.zero = false;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = bit7 != 0;
+		self.registers.f.half_carry = false;
+	}
+	fn cpl(&mut self) {
+		self.registers.a = !self.registers.a;
+		self.registers.f.half_carry = true;
+		self.registers.f.subtract = true;
+	}
+	fn bit(&mut self, idx: u8, value: u8) {
+		let mask = 1 << idx;
+		self.registers.f.zero = (value & mask) == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.half_carry = true;
+	}
+	fn bit_hl(&mut self, idx: u8) {
+		let addr = self.registers.get_hl();
+		let value = self.bus.read_byte(addr);
+		let mask = 1 << idx;
+
+		self.registers.f.zero = (value & mask) == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.half_carry = true;
+	}
+	fn reset(&mut self, idx: u8, value: u8) -> u8 {
+		let mask = 1 << idx;
+		value & !mask
+	}
+	fn reset_hl(&mut self, idx: u8) {
+		let addr = self.registers.get_hl();
+		let value = self.bus.read_byte(addr);
+		let mask = 1 << idx;
+		self.bus.write_byte(addr, value & !mask);
+	}
+	fn set(&mut self, idx: u8, value: u8) -> u8 {
+		let mask = 1 << idx;
+		value | mask
+	}
+	fn set_hl(&mut self, idx: u8) {
+		let addr = self.registers.get_hl();
+		let value = self.bus.read_byte(addr);
+		let mask = 1 << idx;
+		self.bus.write_byte(addr, value | mask);
+	}
+	fn srl(&mut self, value: u8) {}
 }

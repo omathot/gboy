@@ -1,4 +1,4 @@
-pub enum Instruction {
+pub(crate) enum Instruction {
 	ADD(ArithmeticTarget),
 	ADDC(ArithmeticTarget),
 	ADDHL,
@@ -21,8 +21,19 @@ pub enum Instruction {
 	SCF,
 	RRA,
 	RLA,
+	RRCA,
+	RLCA,
+	CPL,
+	BIT(u8, ArithmeticTarget),
+	BITHL(u8),
+	RESET(u8, ArithmeticTarget),
+	RESETHL(u8),
+	SET(u8, ArithmeticTarget),
+	SETHL(u8),
+	SRL(ArithmeticTarget),
+	SRLHL,
 }
-pub enum ArithmeticTarget {
+pub(crate) enum ArithmeticTarget {
 	A,
 	B,
 	C,
