@@ -32,6 +32,12 @@ pub(crate) enum Instruction {
 	SETHL(u8),
 	SRL(ArithmeticTarget),
 	SRLHL,
+	RR(ArithmeticTarget),
+	RRHL,
+	RL(ArithmeticTarget),
+	RLHL,
+	RRC(ArithmeticTarget),
+	RLC(ArithmeticTarget),
 }
 pub(crate) enum ArithmeticTarget {
 	A,

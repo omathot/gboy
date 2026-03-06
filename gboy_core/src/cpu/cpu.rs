@@ -135,6 +135,19 @@ impl CPU {
 				let new_v = self.srl(v);
 				self.registers.set(&target, new_v);
 			}
+			Instruction::SRLHL => self.srl_hl(),
+			Instruction::RR(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.rr(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::RRHL => self.rr_hl(),
+			Instruction::RL(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.rl(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::RLHL => self.rl_hl(),
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -272,7 +285,7 @@ impl CPU {
 	}
 	fn rla(&mut self) {
 		let old_carry = self.registers.f.carry as u8;
-		let new_carry = self.registers.a & 0x8; // bit 7 falls
+		let new_carry = self.registers.a & 0x80; // bit 7 falls
 
 		self.registers.a = (self.registers.a << 1) | old_carry;
 		self.registers.f.zero = false;
@@ -289,7 +302,7 @@ impl CPU {
 		self.registers.f.half_carry = false;
 	}
 	fn rlca(&mut self) {
-		let bit7 = self.registers.a & 0x8;
+		let bit7 = self.registers.a & 0x80;
 		self.registers.a = (self.registers.a << 1) | (bit7 >> 7);
 		self.registers.f.zero = false;
 		self.registers.f.subtract = false;
@@ -345,5 +358,45 @@ impl CPU {
 		self.registers.f.carry = new_carry != 0;
 		self.registers.f.half_carry = false;
 		new_v
+	}
+	fn srl_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.srl(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn rr(&mut self, value: u8) -> u8 {
+		let old_carry = self.registers.f.carry as u8;
+		let new_carry = value & 0x1;
+		let new_v = (value >> 1) | (old_carry << 7);
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.half_carry = false;
+		self.registers.f.carry = new_carry != 0;
+		new_v
+	}
+	fn rr_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.rr(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn rl(&mut self, value: u8) -> u8 {
+		let old_carry = self.registers.f.carry as u8;
+		let new_carry = value & 0x80;
+		let new_v = (value << 1) | old_carry;
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = new_carry != 0;
+		self.registers.f.half_carry = false;
+		new_v
+	}
+	fn rl_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.rl(v);
+		self.bus.write_byte(addr, new_v);
 	}
 }
