@@ -148,6 +148,18 @@ impl CPU {
 				self.registers.set(&target, new_v);
 			}
 			Instruction::RLHL => self.rl_hl(),
+			Instruction::RRC(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.rrc(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::RRCHL => self.rrc_hl(),
+			Instruction::RLC(target) => {
+				let v = self.registers.value(&target);
+				let new_v = self.rlc(v);
+				self.registers.set(&target, new_v);
+			}
+			Instruction::RLCHL => self.rlc_hl(),
 			// TODO: support more insturctions
 			_ => {}
 		}
@@ -397,6 +409,38 @@ impl CPU {
 		let addr = self.registers.get_hl();
 		let v = self.bus.read_byte(addr);
 		let new_v = self.rl(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn rrc(&mut self, value: u8) -> u8 {
+		let bit0 = value & 0x1;
+		let new_v = (value >> 1) | (bit0 << 7);
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.carry = bit0 != 0;
+		self.registers.f.half_carry = false;
+		self.registers.f.subtract = false;
+		new_v
+	}
+	fn rrc_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.rrc(v);
+		self.bus.write_byte(addr, new_v);
+	}
+	fn rlc(&mut self, value: u8) -> u8 {
+		let bit7 = value & 0x80;
+		let new_v = (value << 1) | (bit7 >> 7);
+
+		self.registers.f.zero = new_v == 0;
+		self.registers.f.subtract = false;
+		self.registers.f.carry = bit7 != 0;
+		self.registers.f.half_carry = false;
+		new_v
+	}
+	fn rlc_hl(&mut self) {
+		let addr = self.registers.get_hl();
+		let v = self.bus.read_byte(addr);
+		let new_v = self.rlc(v);
 		self.bus.write_byte(addr, new_v);
 	}
 }

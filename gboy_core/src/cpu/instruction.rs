@@ -37,7 +37,13 @@ pub(crate) enum Instruction {
 	RL(ArithmeticTarget),
 	RLHL,
 	RRC(ArithmeticTarget),
+	RRCHL,
 	RLC(ArithmeticTarget),
+	RLCHL,
+	SRA(ArithmeticTarget),
+	SRAHL,
+	SLA(ArithmeticTarget),
+	SLAHL,
 }
 pub(crate) enum ArithmeticTarget {
 	A,
