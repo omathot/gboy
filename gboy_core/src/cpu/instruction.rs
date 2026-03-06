@@ -46,6 +46,34 @@ pub(crate) enum Instruction {
 	SLAHL,
 	SWAP(ArithmeticTarget),
 	SWAPHL,
+	JP(JumpTest),
+}
+impl Instruction {
+	pub(crate) fn from_byte(byte: u8, prefixed: bool) -> Option<Instruction> {
+		if prefixed {
+			Instruction::from_byte_prefixed(byte)
+		} else {
+			Instruction::from_byte_not_prefixed(byte)
+		}
+	}
+	fn from_byte_prefixed(byte: u8) -> Option<Instruction> {
+		match byte {
+			0x00 => Some(Instruction::RLC(ArithmeticTarget::B)),
+			/* TODO: implement more */
+			_ => {
+				unimplemented!("Unimplemented opcode: {:x}", byte);
+			}
+		}
+	}
+	fn from_byte_not_prefixed(byte: u8) -> Option<Instruction> {
+		match byte {
+			0x80 => Some(Instruction::ADD(ArithmeticTarget::B)),
+			0x81 => Some(Instruction::ADD(ArithmeticTarget::C)),
+			_ => {
+				unimplemented!("Unimplemented opcode: {}", byte)
+			}
+		}
+	}
 }
 pub(crate) enum ArithmeticTarget {
 	A,
@@ -55,4 +83,11 @@ pub(crate) enum ArithmeticTarget {
 	E,
 	H,
 	L,
+}
+pub(crate) enum JumpTest {
+	NotZero,
+	Zero,
+	NotCarry,
+	Carry,
+	Always,
 }

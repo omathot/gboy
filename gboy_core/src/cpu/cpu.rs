@@ -1,37 +1,4 @@
-use crate::cpu::{ArithmeticTarget, Instruction, Registers};
-
-struct MemoryBus {
-	memory: [u8; 0xFFFF + 1],
-}
-impl MemoryBus {
-	pub fn new() -> MemoryBus {
-		MemoryBus {
-			memory: [0; 0xFFFF + 1],
-		}
-	}
-	fn read_byte(&self, addr: u16) -> u8 {
-		self.memory[addr as usize]
-	}
-	fn write_byte(&mut self, addr: u16, value: u8) {
-		match addr {
-			0x0000..=0x00FF => { /* Boot ROM */ }
-			0x0000..=0x3FFF => { /* Game ROM Bank 0 */ }
-			0x4000..=0x7FFF => { /* Game ROM Bank N */ }
-			0x8000..=0x97FF => { /* Tile RAM */ }
-			0x9800..=0x9FFF => { /* Background Map */ }
-			0xA000..=0xBFFF => { /* Cartridge RAM */ }
-			0xC000..=0xDFFF => { /* Working RAM */ }
-			0xE000..=0xFDFF => { /* echo ram */ }
-			0xFE00..=0xFE9F => { /* OAM sprite table */ }
-			0xFEA0..=0xFEFF => { /* Unused */ }
-			0xFF00..=0xFF7F => { /* io_registers */ }
-			0xFF80..=0xFFFE => { /* High ram */ }
-			0xFFFF => { /* interrupt */ }
-		}
-		// TODO: write byte in relevant addr section
-		self.memory[addr as usize] = value;
-	}
-}
+use crate::cpu::{Instruction, JumpTest, MemoryBus, Registers};
 
 pub(crate) struct CPU {
 	registers: Registers,
@@ -46,140 +13,271 @@ impl CPU {
 			pc: 0,
 		}
 	}
-	fn execute(&mut self, instruction: Instruction) {
+	fn step(&mut self) {
+		let mut opcode = self.bus.read_byte(self.pc);
+		let prefixed = opcode == 0xCB;
+		if prefixed {
+			opcode = self.bus.read_byte(self.pc + 1);
+		}
+
+		let next_pc = if let Some(instruction) = Instruction::from_byte(opcode, prefixed) {
+			self.execute(instruction)
+		} else {
+			panic!("Unknown instruction found: 0x{:x}", opcode);
+		};
+		self.pc = next_pc;
+	}
+	fn jump(&self, should_jump: bool) -> u16 {
+		if should_jump {
+			// little endian
+			let least = self.bus.read_byte(self.pc + 1) as u16;
+			let most = self.bus.read_byte(self.pc + 2) as u16;
+			(most << 8) | least
+		} else {
+			// 1 byte for tag + 2 for jp addr
+			self.pc.wrapping_add(3)
+		}
+	}
+	fn execute(&mut self, instruction: Instruction) -> u16 {
+		let next_pc = self.pc.wrapping_add(1);
 		match instruction {
+			Instruction::JP(test) => {
+				let jump_condition = match test {
+					JumpTest::NotZero => !self.registers.f.zero,
+					JumpTest::NotCarry => !self.registers.f.carry,
+					JumpTest::Zero => self.registers.f.zero,
+					JumpTest::Carry => self.registers.f.carry,
+					JumpTest::Always => true,
+				};
+				self.jump(jump_condition)
+			}
 			Instruction::ADD(target) => {
 				let v = self.registers.value(&target);
 				self.registers.a = self.add(v);
+				next_pc
 			}
 			Instruction::ADDC(target) => {
 				let v = self.registers.value(&target);
 				self.registers.a = self.add_carry(v);
+				next_pc
 			}
-			Instruction::ADDHL => self.add_hl(),
+			Instruction::ADDHL => {
+				self.add_hl();
+				next_pc
+			}
 			Instruction::SUB(target) => {
 				let v = self.registers.value(&target);
 				self.registers.a = self.subtract(v);
+				next_pc
 			}
 			Instruction::SUBC(target) => {
 				let v = self.registers.value(&target);
 				self.registers.a = self.subtract_carry(v);
+				next_pc
 			}
-			Instruction::SUBHL => self.subtract_hl(),
+			Instruction::SUBHL => {
+				self.subtract_hl();
+				next_pc
+			}
 			Instruction::AND(target) => {
 				let v = self.registers.value(&target);
 				self.and(v);
+				next_pc
 			}
-			Instruction::ANDHL => self.and_hl(),
+			Instruction::ANDHL => {
+				self.and_hl();
+				next_pc
+			}
 			Instruction::OR(target) => {
 				let v = self.registers.value(&target);
 				self.or(v);
+				next_pc
 			}
-			Instruction::ORHL => self.or_hl(),
+			Instruction::ORHL => {
+				self.or_hl();
+				next_pc
+			}
 			Instruction::XOR(target) => {
 				let v = self.registers.value(&target);
 				self.xor(v);
+				next_pc
 			}
-			Instruction::XORHL => self.xor_hl(),
+			Instruction::XORHL => {
+				self.xor_hl();
+				next_pc
+			}
 			Instruction::CMP(target) => {
 				let v = self.registers.value(&target);
 				self.cmp(v);
+				next_pc
 			}
-			Instruction::CMPHL => self.cmp_hl(),
+			Instruction::CMPHL => {
+				self.cmp_hl();
+				next_pc
+			}
 			Instruction::INC(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.inc(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::INCHL => self.inc_hl(),
+			Instruction::INCHL => {
+				self.inc_hl();
+				next_pc
+			}
 			Instruction::DEC(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.dec(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::DECHL => self.dec_hl(),
+			Instruction::DECHL => {
+				self.dec_hl();
+				next_pc
+			}
 			Instruction::CCF => {
 				self.registers.f.carry = !self.registers.f.carry;
 				self.registers.f.subtract = false;
 				self.registers.f.half_carry = false;
+				next_pc
 			}
 			Instruction::SCF => {
 				self.registers.f.carry = true;
 				self.registers.f.subtract = false;
 				self.registers.f.half_carry = false;
+				next_pc
 			}
-			Instruction::RRA => self.rra(),
-			Instruction::RLA => self.rla(),
-			Instruction::RRCA => self.rrca(),
-			Instruction::RLCA => self.rlca(),
-			Instruction::CPL => self.cpl(),
+			Instruction::RRA => {
+				self.rra();
+				next_pc
+			}
+			Instruction::RLA => {
+				self.rla();
+				next_pc
+			}
+			Instruction::RRCA => {
+				self.rrca();
+				next_pc
+			}
+			Instruction::RLCA => {
+				self.rlca();
+				next_pc
+			}
+			Instruction::CPL => {
+				self.cpl();
+				next_pc
+			}
 			Instruction::BIT(idx, target) => {
 				let v = self.registers.value(&target);
 				self.bit(idx, v);
+				next_pc
 			}
-			Instruction::BITHL(idx) => self.bit_hl(idx),
+			Instruction::BITHL(idx) => {
+				self.bit_hl(idx);
+				next_pc
+			}
 			Instruction::RESET(idx, target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.reset(idx, v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::RESETHL(idx) => self.reset_hl(idx),
+			Instruction::RESETHL(idx) => {
+				self.reset_hl(idx);
+				next_pc
+			}
 			Instruction::SET(idx, target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.set(idx, v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::SETHL(idx) => self.set_hl(idx),
+			Instruction::SETHL(idx) => {
+				self.set_hl(idx);
+				next_pc
+			}
 			Instruction::SRL(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.srl(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::SRLHL => self.srl_hl(),
+			Instruction::SRLHL => {
+				self.srl_hl();
+				next_pc
+			}
 			Instruction::RR(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.rr(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::RRHL => self.rr_hl(),
+			Instruction::RRHL => {
+				self.rr_hl();
+				next_pc
+			}
 			Instruction::RL(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.rl(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::RLHL => self.rl_hl(),
+			Instruction::RLHL => {
+				self.rl_hl();
+				next_pc
+			}
 			Instruction::RRC(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.rrc(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::RRCHL => self.rrc_hl(),
+			Instruction::RRCHL => {
+				self.rrc_hl();
+				next_pc
+			}
 			Instruction::RLC(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.rlc(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::RLCHL => self.rlc_hl(),
+			Instruction::RLCHL => {
+				self.rlc_hl();
+				next_pc
+			}
 			Instruction::SRA(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.sra(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::SRAHL => self.sra_hl(),
+			Instruction::SRAHL => {
+				self.sra_hl();
+				next_pc
+			}
 			Instruction::SLA(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.sla(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::SLAHL => self.sla_hl(),
+			Instruction::SLAHL => {
+				self.sla_hl();
+				next_pc
+			}
 			Instruction::SWAP(target) => {
 				let v = self.registers.value(&target);
 				let new_v = self.swap(v);
 				self.registers.set(&target, new_v);
+				next_pc
 			}
-			Instruction::SWAPHL => self.swap_hl(),
+			Instruction::SWAPHL => {
+				self.swap_hl();
+				next_pc
+			}
 			// TODO: support more insturctions
-			_ => {}
+			_ => next_pc,
 		}
 	}
 	fn add(&mut self, value: u8) -> u8 {
