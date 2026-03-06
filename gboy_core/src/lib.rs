@@ -1,4 +1,4 @@
-pub mod cpu;
+mod cpu;
 use cpu::CPU;
 
 // 20x18 tiles
