@@ -1,15 +1,22 @@
 pub(crate) enum Instruction {
 	NOP,
+	PUSH(StackTarget),
+	POP(StackTarget),
 	ADD(ArithmeticTarget),
+	ADD16(Reg16Target),
 	ADDC(ArithmeticTarget),
+	ADDSP,
 	SUB(ArithmeticTarget),
+	SUB16(Reg16Target),
 	SUBC(ArithmeticTarget),
 	AND(ArithmeticTarget),
 	OR(ArithmeticTarget),
 	XOR(ArithmeticTarget),
 	CMP(ArithmeticTarget),
 	INC(ArithmeticTarget),
+	INC16(Reg16Target),
 	DEC(ArithmeticTarget),
+	DEC16(Reg16Target),
 	CCF,
 	SCF,
 	RRA,
@@ -339,7 +346,24 @@ impl Instruction {
 			0x00 => Some(Instruction::NOP),
 
 			// load
-			// 0x01 => Some(Instruction::LD(LoadType::Byte((), ())))
+			0x01 => Some(Instruction::LD(LoadType::Word(
+				Reg16Target::BC,
+				Reg16Source::D16,
+			))),
+			0x02 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::BCI,
+				Reg8Source::A,
+			))),
+			0x03 => Some(Instruction::INC16(Reg16Target::BC)),
+			0x04 => Some(Instruction::INC(ArithmeticTarget::B)),
+			0x05 => Some(Instruction::DEC(ArithmeticTarget::B)),
+			0x06 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::B,
+				Reg8Source::D8,
+			))),
+			0x07 => Some(Instruction::RLCA),
+			0x08 => Some(Instruction::LD(LoadType::IndirectFromSP)),
+			0x09 => Some(Instruction::ADD16(Reg16Target::BC)),
 
 			// ADD
 			0x80 => Some(Instruction::ADD(ArithmeticTarget::B)),
@@ -375,7 +399,7 @@ pub(crate) enum JumpTest {
 	Carry,
 	Always,
 }
-pub(crate) enum LoadByteTarget {
+pub(crate) enum Reg8Target {
 	A,
 	B,
 	C,
@@ -383,9 +407,11 @@ pub(crate) enum LoadByteTarget {
 	E,
 	H,
 	L,
+	BCI,
+	DEI,
 	HLI,
 }
-pub(crate) enum LoadByteSource {
+pub(crate) enum Reg8Source {
 	A,
 	B,
 	C,
@@ -394,8 +420,28 @@ pub(crate) enum LoadByteSource {
 	H,
 	L,
 	D8,
+	BCI,
+	DEI,
 	HLI,
 }
+pub(crate) enum Reg16Target {
+	BC,
+	DE,
+	HL,
+	SP,
+}
+pub(crate) enum Reg16Source {
+	D16,
+}
 pub(crate) enum LoadType {
-	Byte(LoadByteTarget, LoadByteSource),
+	Byte(Reg8Target, Reg8Source),
+	Word(Reg16Target, Reg16Source),
+	IndirectFromSP, // only opcode to store SP to arbitrary addr
+}
+
+pub(crate) enum StackTarget {
+	AF,
+	BC,
+	DE,
+	HL,
 }

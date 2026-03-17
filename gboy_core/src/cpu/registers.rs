@@ -1,4 +1,4 @@
-use crate::cpu::{ArithmeticTarget, MemoryBus};
+use crate::cpu::{ArithmeticTarget, MemoryBus, instruction::Reg16Target};
 
 const ZERO_FLAG_BYTE_POS: u8 = 7;
 const SUBTRACT_FLAG_BYTE_POS: u8 = 6;
@@ -82,6 +82,15 @@ impl Registers {
 		};
 		v
 	}
+	pub(crate) fn value_16(&self, target: &Reg16Target, sp: u16) -> u16 {
+		let v = match target {
+			Reg16Target::BC => self.get_bc(),
+			Reg16Target::DE => self.get_de(),
+			Reg16Target::HL => self.get_hl(),
+			Reg16Target::SP => sp,
+		};
+		v
+	}
 	pub(crate) fn set(&mut self, target: &ArithmeticTarget, value: u8, bus: &mut MemoryBus) {
 		match target {
 			ArithmeticTarget::A => self.a = value,
@@ -92,6 +101,14 @@ impl Registers {
 			ArithmeticTarget::H => self.h = value,
 			ArithmeticTarget::L => self.l = value,
 			ArithmeticTarget::HL => bus.write_byte(self.get_hl(), value),
+		}
+	}
+	pub(crate) fn set_16(&mut self, target: &Reg16Target, v: u16, sp: &mut u16) {
+		match target {
+			Reg16Target::BC => self.set_bc(v),
+			Reg16Target::DE => self.set_de(v),
+			Reg16Target::HL => self.set_hl(v),
+			Reg16Target::SP => *sp = v,
 		}
 	}
 	pub(crate) fn get_af(&self) -> u16 {

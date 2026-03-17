@@ -1,9 +1,13 @@
-use crate::cpu::{Instruction, JumpTest, MemoryBus, Registers};
+use super::instruction::{
+	Instruction, JumpTest, LoadType, Reg8Source, Reg8Target, Reg16Source, Reg16Target, StackTarget,
+};
+use crate::cpu::{MemoryBus, Registers};
 
 pub(crate) struct CPU {
 	registers: Registers,
 	bus: MemoryBus,
 	pc: u16,
+	sp: u16,
 }
 impl CPU {
 	pub fn new() -> CPU {
@@ -11,6 +15,7 @@ impl CPU {
 			registers: Registers::new(),
 			bus: MemoryBus::new(),
 			pc: 0,
+			sp: 0,
 		}
 	}
 	fn step(&mut self) {
@@ -38,9 +43,61 @@ impl CPU {
 			self.pc.wrapping_add(3)
 		}
 	}
+	fn push(&mut self, value: u16) {
+		self.sp = self.sp.wrapping_sub(1);
+		self.bus.write_byte(self.sp, ((value & 0xFF00) >> 8) as u8);
+
+		self.sp = self.sp.wrapping_sub(1);
+		self.bus.write_byte(self.sp, (value & 0xFF) as u8);
+	}
+	fn pop(&mut self) -> u16 {
+		let least = self.bus.read_byte(self.sp) as u16;
+		self.sp = self.sp.wrapping_add(1);
+
+		let most = self.bus.read_byte(self.sp) as u16;
+		self.sp = self.sp.wrapping_add(1);
+
+		(most << 8) | least
+	}
+	fn call(&mut self, should_jump: bool) -> u16 {
+		let next_pc = self.pc.wrapping_add(3);
+		if should_jump {
+			self.push(next_pc);
+			// TODO:
+			// self.read_next_word()
+			0 // tmp
+		} else {
+			next_pc
+		}
+	}
+	fn return_(&mut self, should_jump: bool) -> u16 {
+		if should_jump {
+			self.pop()
+		} else {
+			self.pc.wrapping_add(1)
+		}
+	}
 	fn execute(&mut self, instruction: Instruction) -> u16 {
 		let next_pc = self.pc.wrapping_add(1);
 		match instruction {
+			Instruction::PUSH(target) => {
+				let v = match target {
+					StackTarget::BC => self.registers.get_bc(),
+					StackTarget::DE => self.registers.get_de(),
+					StackTarget::HL => self.registers.get_hl(),
+					_ => panic!("Invalid target for PUSH"),
+				};
+				self.push(v);
+				next_pc
+			}
+			Instruction::POP(target) => {
+				let v = self.pop();
+				match target {
+					StackTarget::BC => self.registers.set_bc(v),
+					_ => panic!("Invalid target for POP"),
+				};
+				next_pc
+			}
 			Instruction::JP(test) => {
 				let jump_condition = match test {
 					JumpTest::NotZero => !self.registers.f.zero,
@@ -51,9 +108,54 @@ impl CPU {
 				};
 				self.jump(jump_condition)
 			}
+			Instruction::LD(load_type) => match load_type {
+				LoadType::Byte(target, source) => {
+					let source_v = match source {
+						Reg8Source::A => self.registers.a,
+						Reg8Source::B => self.registers.b,
+						_ => {
+							unimplemented!("Add more LoadByteSources");
+						}
+					};
+					match target {
+						Reg8Target::A => self.registers.a = source_v,
+						Reg8Target::B => self.registers.b = source_v,
+						_ => {
+							unimplemented!("Add more LoadByteTarget");
+						}
+					}
+					next_pc
+				}
+				LoadType::Word(target, source) => {
+					let source_v = match source {
+						Reg16Source::D16 => {
+							let least = self.bus.read_byte(self.pc + 1) as u16;
+							let most = self.bus.read_byte(self.pc + 2) as u16;
+							(most << 8) | least
+						}
+					};
+					self.registers.set_16(&target, source_v, &mut self.sp);
+					self.pc.wrapping_add(3)
+				}
+				LoadType::IndirectFromSP => {
+					let least = self.bus.read_byte(self.pc + 1) as u16;
+					let most = self.bus.read_byte(self.pc + 2) as u16;
+					let addr = (most << 8) | least;
+					self.bus.write_byte(addr, (self.sp & 0xFF) as u8);
+					self.bus.write_byte(addr + 1, (self.sp >> 8) as u8);
+
+					self.pc.wrapping_add(3)
+				}
+			},
+			// ARITHMETIC
 			Instruction::ADD(target) => {
 				let v = self.registers.value(&target, &self.bus);
 				self.registers.a = self.add(v);
+				next_pc
+			}
+			Instruction::ADD16(target) => {
+				let v = self.registers.value_16(&target, self.sp);
+				self.add_16(v); // always add to hl
 				next_pc
 			}
 			Instruction::ADDC(target) => {
@@ -97,10 +199,22 @@ impl CPU {
 				self.registers.set(&target, new_v, &mut self.bus);
 				next_pc
 			}
+			Instruction::INC16(target) => {
+				let v = self.registers.value_16(&target, self.sp);
+				let new_v = v.wrapping_add(1);
+				self.registers.set_16(&target, new_v, &mut self.sp);
+				next_pc
+			}
 			Instruction::DEC(target) => {
 				let v = self.registers.value(&target, &self.bus);
 				let new_v = self.dec(v);
 				self.registers.set(&target, new_v, &mut self.bus);
+				next_pc
+			}
+			Instruction::DEC16(target) => {
+				let v = self.registers.value_16(&target, self.sp);
+				let new_v = v.wrapping_sub(1);
+				self.registers.set_16(&target, new_v, &mut self.sp);
 				next_pc
 			}
 			Instruction::CCF => {
@@ -212,6 +326,15 @@ impl CPU {
 		self.registers.f.half_carry = (self.registers.a & 0xF) + (value & 0xF) > 0xF;
 		new_value
 	}
+	fn add_16(&mut self, v: u16) {
+		let hl = self.registers.get_hl();
+
+		let (res, overflow) = hl.overflowing_add(v);
+		self.registers.f.subtract = false;
+		self.registers.f.carry = overflow;
+		self.registers.f.half_carry = (hl & 0x0FFF) + (v & 0x0FFF) > 0x0FFF;
+		self.registers.set_hl(res);
+	}
 	fn add_carry(&mut self, value: u8) -> u8 {
 		let carry = self.registers.f.carry as u8;
 		let (v1, overflow1) = self.registers.a.overflowing_add(value);
@@ -265,6 +388,7 @@ impl CPU {
 		self.registers.f.half_carry = false;
 	}
 	fn cmp(&mut self, value: u8) {
+		// just set flags
 		self.subtract(value);
 	}
 	fn inc(&mut self, value: u8) -> u8 {
@@ -420,4 +544,5 @@ impl CPU {
 		self.registers.f.half_carry = false;
 		new_v
 	}
+	fn ld16(&mut self, value: u16) {}
 }
