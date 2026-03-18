@@ -9,6 +9,7 @@ pub(crate) struct CPU {
 	bus: MemoryBus,
 	pc: u16,
 	sp: u16,
+	ime: bool, // interrupt master enable
 }
 impl CPU {
 	pub fn new() -> CPU {
@@ -17,6 +18,7 @@ impl CPU {
 			bus: MemoryBus::new(),
 			pc: 0,
 			sp: 0,
+			ime: false,
 		}
 	}
 	fn step(&mut self) {
@@ -35,12 +37,9 @@ impl CPU {
 		};
 		self.pc = next_pc;
 	}
-	fn jump(&self, should_jump: bool) -> u16 {
+	fn jump(&mut self, should_jump: bool) -> u16 {
 		if should_jump {
-			// little endian
-			let least = self.bus.read_byte(self.pc + 1) as u16;
-			let most = self.bus.read_byte(self.pc + 2) as u16;
-			(most << 8) | least
+			self.read_next_word()
 		} else {
 			// 1 byte for tag + 2 for jp addr
 			self.pc.wrapping_add(3)
@@ -66,9 +65,7 @@ impl CPU {
 		let next_pc = self.pc.wrapping_add(3);
 		if should_jump {
 			self.push(next_pc);
-			// TODO:
-			// self.read_next_word()
-			0 // tmp
+			self.read_next_word()
 		} else {
 			next_pc
 		}
@@ -96,6 +93,16 @@ impl CPU {
 				// for now treat as NOP
 				next_pc
 			}
+			Instruction::EI => {
+				// TODO: enable interrupts after next op, not current
+				// find a way to handle that
+				self.ime = true;
+				next_pc
+			}
+			Instruction::DI => {
+				self.ime = false;
+				next_pc
+			}
 			Instruction::PUSH(target) => {
 				let v = match target {
 					StackTarget::BC => self.registers.get_bc(),
@@ -113,6 +120,35 @@ impl CPU {
 					_ => panic!("Invalid target for POP"),
 				};
 				next_pc
+			}
+			Instruction::CALL(test) => {
+				let should_jump = match test {
+					JumpTest::NotZero => !self.registers.f.zero,
+					JumpTest::NotCarry => !self.registers.f.carry,
+					JumpTest::Zero => self.registers.f.zero,
+					JumpTest::Carry => self.registers.f.carry,
+					JumpTest::Always => true,
+				};
+				self.call(should_jump)
+			}
+			Instruction::RET(test) => {
+				let should_jump = match test {
+					JumpTest::NotZero => !self.registers.f.zero,
+					JumpTest::NotCarry => !self.registers.f.carry,
+					JumpTest::Zero => self.registers.f.zero,
+					JumpTest::Carry => self.registers.f.carry,
+					JumpTest::Always => true,
+				};
+				self.return_(should_jump)
+			}
+			Instruction::RETI => {
+				self.ime = true;
+				self.pop()
+			}
+			Instruction::RST(addr) => {
+				let next_pc = self.pc.wrapping_add(1);
+				self.push(next_pc);
+				addr as u16
 			}
 			Instruction::JP(test) => {
 				let jump_condition = match test {
@@ -155,8 +191,9 @@ impl CPU {
 						Reg8Source::DEI => self.bus.read_byte(self.registers.get_de()),
 						Reg8Source::HLI => self.bus.read_byte(self.registers.get_hl()),
 						Reg8Source::D8 => {
-							next_pc = next_pc.wrapping_add(1); // consumed an extra byte, bump next_pc
-							self.bus.read_byte(self.pc + 1)
+							// consume extra byte, bump next_pc
+							next_pc = next_pc.wrapping_add(1);
+							self.read_next_byte()
 						}
 						Reg8Source::HLINC => {
 							let v = self.bus.read_byte(self.registers.get_hl());
@@ -197,19 +234,13 @@ impl CPU {
 				}
 				LoadType::Word(target, source) => {
 					let source_v = match source {
-						Reg16Source::D16 => {
-							let least = self.bus.read_byte(self.pc + 1) as u16;
-							let most = self.bus.read_byte(self.pc + 2) as u16;
-							(most << 8) | least
-						}
+						Reg16Source::D16 => self.read_next_word(),
 					};
 					self.registers.set_16(&target, source_v, &mut self.sp);
 					self.pc.wrapping_add(3)
 				}
 				LoadType::IndirectFromSP => {
-					let least = self.bus.read_byte(self.pc + 1) as u16;
-					let most = self.bus.read_byte(self.pc + 2) as u16;
-					let addr = (most << 8) | least;
+					let addr = self.read_next_word();
 					self.bus.write_byte(addr, (self.sp & 0xFF) as u8);
 					self.bus.write_byte(addr + 1, (self.sp >> 8) as u8);
 
@@ -685,5 +716,14 @@ impl CPU {
 		self.registers.f.half_carry = false;
 		new_v
 	}
-	fn ld16(&mut self, value: u16) {}
+
+	// helper
+	fn read_next_word(&mut self) -> u16 {
+		let least = self.bus.read_byte(self.pc + 1) as u16;
+		let most = self.bus.read_byte(self.pc + 2) as u16;
+		(most << 8) | least
+	}
+	fn read_next_byte(&mut self) -> u8 {
+		self.bus.read_byte(self.pc + 1)
+	}
 }

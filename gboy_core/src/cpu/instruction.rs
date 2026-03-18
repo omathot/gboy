@@ -41,6 +41,12 @@ pub(crate) enum Instruction {
 	JP(JumpTest),
 	JR(JumpTest),
 	LD(LoadType),
+	CALL(JumpTest),
+	RET(JumpTest),
+	RETI,
+	EI,
+	DI,
+	RST(u8),
 }
 impl Instruction {
 	pub(crate) fn from_byte(byte: u8, prefixed: bool) -> Option<Instruction> {
@@ -724,8 +730,6 @@ impl Instruction {
 				Reg8Target::A,
 				Reg8Source::A,
 			))),
-
-			// 8bit arithmetic/logical ops
 			0x80 => Some(Instruction::ADD(ArithmeticTarget::B)),
 			0x81 => Some(Instruction::ADD(ArithmeticTarget::C)),
 			0x82 => Some(Instruction::ADD(ArithmeticTarget::D)),
@@ -790,7 +794,39 @@ impl Instruction {
 			0xBD => Some(Instruction::CMP(ArithmeticTarget::L)),
 			0xBE => Some(Instruction::CMP(ArithmeticTarget::HL)),
 			0xBF => Some(Instruction::CMP(ArithmeticTarget::A)),
-
+			0xC0 => Some(Instruction::RET(JumpTest::NotZero)),
+			0xC1 => Some(Instruction::POP(StackTarget::BC)),
+			0xC2 => Some(Instruction::JP(JumpTest::NotZero)),
+			0xC3 => Some(Instruction::JP(JumpTest::Always)),
+			0xC4 => Some(Instruction::CALL(JumpTest::NotZero)),
+			0xC5 => Some(Instruction::PUSH(StackTarget::BC)),
+			0xC6 => Some(Instruction::ADD(ArithmeticTarget::D8)),
+			0xC7 => Some(Instruction::RST(0x00)),
+			0xC8 => Some(Instruction::RET(JumpTest::Zero)),
+			0xC9 => Some(Instruction::RET(JumpTest::Always)),
+			0xCA => Some(Instruction::JP(JumpTest::Zero)),
+			0xCB => panic!("Don't think prefix should ever be fed here?"),
+			0xCC => Some(Instruction::CALL(JumpTest::Zero)),
+			0xCD => Some(Instruction::CALL(JumpTest::Always)),
+			0xCE => Some(Instruction::ADDC(ArithmeticTarget::D8)),
+			0xCF => Some(Instruction::RST(0x08)),
+			0xD0 => Some(Instruction::RET(JumpTest::NotCarry)),
+			0xD1 => Some(Instruction::POP(StackTarget::DE)),
+			0xD2 => Some(Instruction::JP(JumpTest::NotCarry)),
+			0xD3 => panic!("Not an op"),
+			0xD4 => Some(Instruction::CALL(JumpTest::NotCarry)),
+			0xD5 => Some(Instruction::PUSH(StackTarget::DE)),
+			0xD6 => Some(Instruction::SUB(ArithmeticTarget::D8)),
+			0xD7 => Some(Instruction::RST(0x10)),
+			0xD8 => Some(Instruction::RET(JumpTest::Carry)),
+			0xD9 => Some(Instruction::RETI),
+			0xDA => Some(Instruction::JP(JumpTest::Carry)),
+			0xDB => panic!("Not an op"),
+			0xDC => Some(Instruction::CALL(JumpTest::Carry)),
+			0xDD => panic!("Not an op"),
+			0xDE => Some(Instruction::SUBC(ArithmeticTarget::D8)),
+			0xDF => Some(Instruction::RST(0x18)),
+			// 0xE0 => Some(Instruction::LDH(0x18)),
 			_ => {
 				unimplemented!("Unimplemented opcode: {}", byte)
 			}
