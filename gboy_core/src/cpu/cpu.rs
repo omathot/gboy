@@ -1,5 +1,6 @@
 use super::instruction::{
-	Instruction, JumpTest, LoadType, Reg8Source, Reg8Target, Reg16Source, Reg16Target, StackTarget,
+	ArithmeticTarget, Instruction, JumpTest, LoadType, Reg8Source, Reg8Target, Reg16Source,
+	Reg16Target, StackTarget,
 };
 use crate::cpu::{MemoryBus, Registers};
 
@@ -22,7 +23,9 @@ impl CPU {
 		let mut opcode = self.bus.read_byte(self.pc);
 		let prefixed = opcode == 0xCB;
 		if prefixed {
-			opcode = self.bus.read_byte(self.pc + 1);
+			// move past prefix
+			self.pc = self.pc.wrapping_add(1);
+			opcode = self.bus.read_byte(self.pc);
 		}
 
 		let next_pc = if let Some(instruction) = Instruction::from_byte(opcode, prefixed) {
@@ -78,8 +81,15 @@ impl CPU {
 		}
 	}
 	fn execute(&mut self, instruction: Instruction) -> u16 {
-		let next_pc = self.pc.wrapping_add(1);
+		let mut next_pc = self.pc.wrapping_add(1);
 		match instruction {
+			Instruction::NOP => next_pc,
+			Instruction::STOP => {
+				// TODO: Implement low power mode / speed switch
+				// for now treat it as 2 byte NOP
+				next_pc = next_pc.wrapping_add(1);
+				next_pc
+			}
 			Instruction::PUSH(target) => {
 				let v = match target {
 					StackTarget::BC => self.registers.get_bc(),
@@ -108,20 +118,73 @@ impl CPU {
 				};
 				self.jump(jump_condition)
 			}
+			Instruction::JR(test) => {
+				let should_jump = match test {
+					JumpTest::NotZero => !self.registers.f.zero,
+					JumpTest::NotCarry => !self.registers.f.carry,
+					JumpTest::Zero => self.registers.f.zero,
+					JumpTest::Carry => self.registers.f.carry,
+					JumpTest::Always => true,
+				};
+				// offset byte bump
+				next_pc = next_pc.wrapping_add(1);
+				if should_jump {
+					let offset = self.bus.read_byte(self.pc + 1) as i8;
+					next_pc.wrapping_add(offset as u16)
+				} else {
+					next_pc
+				}
+			}
 			Instruction::LD(load_type) => match load_type {
 				LoadType::Byte(target, source) => {
 					let source_v = match source {
 						Reg8Source::A => self.registers.a,
 						Reg8Source::B => self.registers.b,
-						_ => {
-							unimplemented!("Add more LoadByteSources");
+						Reg8Source::C => self.registers.c,
+						Reg8Source::D => self.registers.d,
+						Reg8Source::E => self.registers.e,
+						Reg8Source::H => self.registers.h,
+						Reg8Source::L => self.registers.l,
+						Reg8Source::BCI => self.bus.read_byte(self.registers.get_bc()),
+						Reg8Source::DEI => self.bus.read_byte(self.registers.get_de()),
+						Reg8Source::HLI => self.bus.read_byte(self.registers.get_hl()),
+						Reg8Source::D8 => {
+							next_pc = next_pc.wrapping_add(1); // consumed an extra byte, bump next_pc
+							self.bus.read_byte(self.pc + 1)
+						}
+						Reg8Source::HLINC => {
+							let v = self.bus.read_byte(self.registers.get_hl());
+							self.registers
+								.set_hl(self.registers.get_hl().wrapping_add(1));
+							v
+						}
+						Reg8Source::HLDEC => {
+							let v = self.bus.read_byte(self.registers.get_hl());
+							self.registers
+								.set_hl(self.registers.get_hl().wrapping_sub(1));
+							v
 						}
 					};
 					match target {
 						Reg8Target::A => self.registers.a = source_v,
 						Reg8Target::B => self.registers.b = source_v,
-						_ => {
-							unimplemented!("Add more LoadByteTarget");
+						Reg8Target::C => self.registers.c = source_v,
+						Reg8Target::D => self.registers.d = source_v,
+						Reg8Target::E => self.registers.e = source_v,
+						Reg8Target::H => self.registers.h = source_v,
+						Reg8Target::L => self.registers.l = source_v,
+						Reg8Target::BCI => self.bus.write_byte(self.registers.get_bc(), source_v),
+						Reg8Target::DEI => self.bus.write_byte(self.registers.get_de(), source_v),
+						Reg8Target::HLI => self.bus.write_byte(self.registers.get_hl(), source_v),
+						Reg8Target::HLINC => {
+							self.bus.write_byte(self.registers.get_hl(), source_v);
+							self.registers
+								.set_hl(self.registers.get_hl().wrapping_add(1));
+						}
+						Reg8Target::HLDEC => {
+							self.bus.write_byte(self.registers.get_hl(), source_v);
+							self.registers
+								.set_hl(self.registers.get_hl().wrapping_sub(1));
 						}
 					}
 					next_pc
@@ -149,7 +212,13 @@ impl CPU {
 			},
 			// ARITHMETIC
 			Instruction::ADD(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.registers.a = self.add(v);
 				next_pc
 			}
@@ -159,37 +228,79 @@ impl CPU {
 				next_pc
 			}
 			Instruction::ADDC(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.registers.a = self.add_carry(v);
 				next_pc
 			}
 			Instruction::SUB(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.registers.a = self.subtract(v);
 				next_pc
 			}
 			Instruction::SUBC(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.registers.a = self.subtract_carry(v);
 				next_pc
 			}
 			Instruction::AND(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.and(v);
 				next_pc
 			}
 			Instruction::OR(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.or(v);
 				next_pc
 			}
 			Instruction::XOR(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.xor(v);
 				next_pc
 			}
 			Instruction::CMP(target) => {
-				let v = self.registers.value(&target, &self.bus);
+				let v = match target {
+					ArithmeticTarget::D8 => {
+						next_pc = next_pc.wrapping_add(1);
+						self.bus.read_byte(self.pc + 1)
+					}
+					_ => self.registers.value(&target, &self.bus),
+				};
 				self.cmp(v);
 				next_pc
 			}
@@ -312,6 +423,30 @@ impl CPU {
 				let v = self.registers.value(&target, &self.bus);
 				let new_v = self.swap(v);
 				self.registers.set(&target, new_v, &mut self.bus);
+				next_pc
+			}
+			Instruction::DAA => {
+				let mut adjustment = 0;
+				if self.registers.f.subtract {
+					if self.registers.f.half_carry {
+						adjustment += 0x06;
+					}
+					if self.registers.f.carry {
+						adjustment += 0x60;
+					}
+					self.registers.a = self.registers.a.wrapping_sub(adjustment);
+				} else {
+					if self.registers.f.half_carry || (self.registers.a & 0x0F) > 0x09 {
+						adjustment += 0x06;
+					}
+					if self.registers.f.carry || self.registers.a > 0x99 {
+						adjustment += 0x60;
+						self.registers.f.carry = true;
+					}
+					self.registers.a = self.registers.a.wrapping_add(adjustment);
+				}
+				self.registers.f.zero = self.registers.a == 0;
+				self.registers.f.half_carry = false;
 				next_pc
 			}
 			// TODO: support more insturctions

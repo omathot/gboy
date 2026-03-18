@@ -79,6 +79,9 @@ impl Registers {
 			ArithmeticTarget::H => self.h,
 			ArithmeticTarget::L => self.l,
 			ArithmeticTarget::HL => bus.read_byte(self.get_hl()),
+			ArithmeticTarget::D8 => {
+				panic!("Should not use registers.value() with a D8 ArithmeticTarget!")
+			}
 		};
 		v
 	}
@@ -101,6 +104,9 @@ impl Registers {
 			ArithmeticTarget::H => self.h = value,
 			ArithmeticTarget::L => self.l = value,
 			ArithmeticTarget::HL => bus.write_byte(self.get_hl(), value),
+			ArithmeticTarget::D8 => {
+				panic!("Should not use registers.set() with a D8 ArithmeticTarget!")
+			}
 		}
 	}
 	pub(crate) fn set_16(&mut self, target: &Reg16Target, v: u16, sp: &mut u16) {

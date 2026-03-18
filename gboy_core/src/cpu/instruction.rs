@@ -1,5 +1,6 @@
 pub(crate) enum Instruction {
 	NOP,
+	STOP,
 	PUSH(StackTarget),
 	POP(StackTarget),
 	ADD(ArithmeticTarget),
@@ -35,7 +36,9 @@ pub(crate) enum Instruction {
 	SRA(ArithmeticTarget),
 	SLA(ArithmeticTarget),
 	SWAP(ArithmeticTarget),
+	DAA,
 	JP(JumpTest),
+	JR(JumpTest),
 	LD(LoadType),
 }
 impl Instruction {
@@ -344,8 +347,6 @@ impl Instruction {
 	fn from_byte_not_prefixed(byte: u8) -> Option<Instruction> {
 		match byte {
 			0x00 => Some(Instruction::NOP),
-
-			// load
 			0x01 => Some(Instruction::LD(LoadType::Word(
 				Reg16Target::BC,
 				Reg16Source::D16,
@@ -364,6 +365,71 @@ impl Instruction {
 			0x07 => Some(Instruction::RLCA),
 			0x08 => Some(Instruction::LD(LoadType::IndirectFromSP)),
 			0x09 => Some(Instruction::ADD16(Reg16Target::BC)),
+			0x0A => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::BCI,
+			))),
+			0x0B => Some(Instruction::DEC16(Reg16Target::BC)),
+			0x0C => Some(Instruction::INC(ArithmeticTarget::C)),
+			0x0D => Some(Instruction::DEC(ArithmeticTarget::C)),
+			0x0E => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::C,
+				Reg8Source::D8,
+			))),
+			0x10 => Some(Instruction::STOP),
+			0x11 => Some(Instruction::LD(LoadType::Word(
+				Reg16Target::DE,
+				Reg16Source::D16,
+			))),
+			0x12 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::DEI,
+				Reg8Source::A,
+			))),
+			0x13 => Some(Instruction::INC16(Reg16Target::DE)),
+			0x14 => Some(Instruction::INC(ArithmeticTarget::D)),
+			0x15 => Some(Instruction::DEC(ArithmeticTarget::D)),
+			0x16 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::D,
+				Reg8Source::D8,
+			))),
+			0x17 => Some(Instruction::RLA),
+			0x18 => Some(Instruction::JR(JumpTest::Always)),
+			0x19 => Some(Instruction::ADD16(Reg16Target::DE)),
+			0x1A => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::DEI,
+			))),
+			0x1B => Some(Instruction::DEC16(Reg16Target::DE)),
+			0x1C => Some(Instruction::INC(ArithmeticTarget::E)),
+			0x1D => Some(Instruction::DEC(ArithmeticTarget::E)),
+			0x1E => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::E,
+				Reg8Source::D8,
+			))),
+			0x1F => Some(Instruction::RRA),
+			0x20 => Some(Instruction::JR(JumpTest::NotZero)),
+			0x21 => Some(Instruction::LD(LoadType::Word(
+				Reg16Target::HL,
+				Reg16Source::D16,
+			))),
+			0x22 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::HLINC,
+				Reg8Source::A,
+			))),
+			0x23 => Some(Instruction::INC16(Reg16Target::HL)),
+			0x24 => Some(Instruction::INC(ArithmeticTarget::H)),
+			0x25 => Some(Instruction::DEC(ArithmeticTarget::H)),
+			0x26 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::H,
+				Reg8Source::D8,
+			))),
+			0x27 => Some(Instruction::DAA),
+			0x28 => Some(Instruction::JR(JumpTest::Zero)),
+			0x29 => Some(Instruction::ADD16(Reg16Target::HL)),
+			0x2A => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::HLINC,
+			))),
 
 			// ADD
 			0x80 => Some(Instruction::ADD(ArithmeticTarget::B)),
@@ -391,6 +457,7 @@ pub(crate) enum ArithmeticTarget {
 	H,
 	L,
 	HL,
+	D8,
 }
 pub(crate) enum JumpTest {
 	NotZero,
@@ -410,6 +477,8 @@ pub(crate) enum Reg8Target {
 	BCI,
 	DEI,
 	HLI,
+	HLINC,
+	HLDEC,
 }
 pub(crate) enum Reg8Source {
 	A,
@@ -423,6 +492,8 @@ pub(crate) enum Reg8Source {
 	BCI,
 	DEI,
 	HLI,
+	HLINC,
+	HLDEC,
 }
 pub(crate) enum Reg16Target {
 	BC,
