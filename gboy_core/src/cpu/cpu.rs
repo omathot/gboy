@@ -90,6 +90,12 @@ impl CPU {
 				next_pc = next_pc.wrapping_add(1);
 				next_pc
 			}
+			Instruction::HALT => {
+				// TODO: Implement CPU low power mode until interrupt occurs
+				// depends on IME flag
+				// for now treat as NOP
+				next_pc
+			}
 			Instruction::PUSH(target) => {
 				let v = match target {
 					StackTarget::BC => self.registers.get_bc(),
