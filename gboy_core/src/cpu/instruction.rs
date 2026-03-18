@@ -9,7 +9,6 @@ pub(crate) enum Instruction {
 	ADDC(ArithmeticTarget),
 	ADDSP,
 	SUB(ArithmeticTarget),
-	SUB16(Reg16Target),
 	SUBC(ArithmeticTarget),
 	AND(ArithmeticTarget),
 	OR(ArithmeticTarget),
@@ -39,8 +38,10 @@ pub(crate) enum Instruction {
 	SWAP(ArithmeticTarget),
 	DAA,
 	JP(JumpTest),
+	JPHL,
 	JR(JumpTest),
 	LD(LoadType),
+	LDHLSP,
 	CALL(JumpTest),
 	RET(JumpTest),
 	RETI,
@@ -826,10 +827,55 @@ impl Instruction {
 			0xDD => panic!("Not an op"),
 			0xDE => Some(Instruction::SUBC(ArithmeticTarget::D8)),
 			0xDF => Some(Instruction::RST(0x18)),
-			// 0xE0 => Some(Instruction::LDH(0x18)),
-			_ => {
-				unimplemented!("Unimplemented opcode: {}", byte)
-			}
+			0xE0 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::HRAMD8,
+				Reg8Source::A,
+			))),
+			0xE1 => Some(Instruction::POP(StackTarget::HL)),
+			0xE2 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::HRAMC,
+				Reg8Source::A,
+			))),
+			0xE3 | 0xE4 => panic!("Not an op"),
+			0xE5 => Some(Instruction::PUSH(StackTarget::HL)),
+			0xE6 => Some(Instruction::AND(ArithmeticTarget::D8)),
+			0xE7 => Some(Instruction::RST(0x20)),
+			0xE8 => Some(Instruction::ADDSP),
+			0xE9 => Some(Instruction::JPHL),
+			0xEA => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A16,
+				Reg8Source::A,
+			))),
+			0xEB | 0xEC | 0xED => panic!("Not an op"),
+			0xEE => Some(Instruction::XOR(ArithmeticTarget::D8)),
+			0xEF => Some(Instruction::RST(0x28)),
+			0xF0 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::HRAMD8,
+			))),
+			0xF1 => Some(Instruction::POP(StackTarget::AF)),
+			0xF2 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::HRAMC,
+			))),
+			0xF3 => Some(Instruction::DI),
+			0xF4 => panic!("Not an op"),
+			0xF5 => Some(Instruction::PUSH(StackTarget::AF)),
+			0xF6 => Some(Instruction::OR(ArithmeticTarget::D8)),
+			0xF7 => Some(Instruction::RST(0x30)),
+			0xF8 => Some(Instruction::LDHLSP),
+			0xF9 => Some(Instruction::LD(LoadType::Word(
+				Reg16Target::SP,
+				Reg16Source::HL,
+			))),
+			0xFA => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::A,
+				Reg8Source::A16,
+			))),
+			0xFB => Some(Instruction::EI),
+			0xFC | 0xFD => panic!("Not an op"),
+			0xFE => Some(Instruction::CMP(ArithmeticTarget::D8)),
+			0xFF => Some(Instruction::RST(0x38)),
 		}
 	}
 }
@@ -864,6 +910,9 @@ pub(crate) enum Reg8Target {
 	HLI,
 	HLINC,
 	HLDEC,
+	HRAMD8,
+	HRAMC,
+	A16,
 }
 pub(crate) enum Reg8Source {
 	A,
@@ -879,6 +928,9 @@ pub(crate) enum Reg8Source {
 	HLI,
 	HLINC,
 	HLDEC,
+	HRAMD8,
+	HRAMC,
+	A16,
 }
 pub(crate) enum Reg16Target {
 	BC,
@@ -888,6 +940,7 @@ pub(crate) enum Reg16Target {
 }
 pub(crate) enum Reg16Source {
 	D16,
+	HL,
 }
 pub(crate) enum LoadType {
 	Byte(Reg8Target, Reg8Source),

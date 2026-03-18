@@ -1,4 +1,7 @@
-use crate::cpu::{ArithmeticTarget, MemoryBus, instruction::Reg16Target};
+use super::{
+	instruction::{ArithmeticTarget, Reg16Target},
+	memory_bus::MemoryBus,
+};
 
 const ZERO_FLAG_BYTE_POS: u8 = 7;
 const SUBTRACT_FLAG_BYTE_POS: u8 = 6;

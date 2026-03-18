@@ -1,8 +1,13 @@
-use super::instruction::{
-	ArithmeticTarget, Instruction, JumpTest, LoadType, Reg8Source, Reg8Target, Reg16Source,
-	Reg16Target, StackTarget,
+use super::{
+	instruction::{
+		ArithmeticTarget, Instruction, JumpTest, LoadType, Reg8Source, Reg8Target, Reg16Source,
+		StackTarget,
+	},
+	memory_bus::MemoryBus,
+	registers::Registers,
 };
-use crate::cpu::{MemoryBus, Registers};
+
+const HIGH_RAM_ADDR: u16 = 0xFF00;
 
 pub(crate) struct CPU {
 	registers: Registers,
@@ -10,6 +15,7 @@ pub(crate) struct CPU {
 	pc: u16,
 	sp: u16,
 	ime: bool, // interrupt master enable
+	halted: bool,
 }
 impl CPU {
 	pub fn new() -> CPU {
@@ -19,6 +25,7 @@ impl CPU {
 			pc: 0,
 			sp: 0,
 			ime: false,
+			halted: false,
 		}
 	}
 	fn step(&mut self) {
@@ -78,6 +85,9 @@ impl CPU {
 		}
 	}
 	fn execute(&mut self, instruction: Instruction) -> u16 {
+		if self.halted {
+			return self.pc;
+		}
 		let mut next_pc = self.pc.wrapping_add(1);
 		match instruction {
 			Instruction::NOP => next_pc,
@@ -89,8 +99,8 @@ impl CPU {
 			}
 			Instruction::HALT => {
 				// TODO: Implement CPU low power mode until interrupt occurs
-				// depends on IME flag
-				// for now treat as NOP
+				// depends on halted flag
+				self.halted = true;
 				next_pc
 			}
 			Instruction::EI => {
@@ -108,7 +118,7 @@ impl CPU {
 					StackTarget::BC => self.registers.get_bc(),
 					StackTarget::DE => self.registers.get_de(),
 					StackTarget::HL => self.registers.get_hl(),
-					_ => panic!("Invalid target for PUSH"),
+					StackTarget::AF => self.registers.get_af(),
 				};
 				self.push(v);
 				next_pc
@@ -117,7 +127,9 @@ impl CPU {
 				let v = self.pop();
 				match target {
 					StackTarget::BC => self.registers.set_bc(v),
-					_ => panic!("Invalid target for POP"),
+					StackTarget::DE => self.registers.set_de(v),
+					StackTarget::HL => self.registers.set_hl(v),
+					StackTarget::AF => self.registers.set_af(v), // works thanks to From<u8> for FlagsRegister
 				};
 				next_pc
 			}
@@ -160,6 +172,7 @@ impl CPU {
 				};
 				self.jump(jump_condition)
 			}
+			Instruction::JPHL => self.registers.get_hl(),
 			Instruction::JR(test) => {
 				let should_jump = match test {
 					JumpTest::NotZero => !self.registers.f.zero,
@@ -207,6 +220,22 @@ impl CPU {
 								.set_hl(self.registers.get_hl().wrapping_sub(1));
 							v
 						}
+						Reg8Source::HRAMD8 => {
+							let offset = self.read_next_byte();
+							// consume extra byte, bump
+							next_pc = next_pc.wrapping_add(1);
+							self.bus.read_byte(HIGH_RAM_ADDR + offset as u16)
+						}
+						Reg8Source::HRAMC => {
+							self.bus.read_byte(HIGH_RAM_ADDR + self.registers.c as u16)
+						}
+						Reg8Source::A16 => {
+							// consumed 2 extra bytes, bump
+							next_pc = next_pc.wrapping_add(2);
+							let addr = self.read_next_word();
+							let v = self.bus.read_byte(addr);
+							v
+						}
 					};
 					match target {
 						Reg8Target::A => self.registers.a = source_v,
@@ -229,15 +258,36 @@ impl CPU {
 							self.registers
 								.set_hl(self.registers.get_hl().wrapping_sub(1));
 						}
+						Reg8Target::HRAMD8 => {
+							let offset = self.read_next_byte();
+							// consume extra byte, bump
+							next_pc = next_pc.wrapping_add(1);
+							self.bus.write_byte(HIGH_RAM_ADDR + offset as u16, source_v);
+						}
+						Reg8Target::HRAMC => {
+							self.bus
+								.write_byte(HIGH_RAM_ADDR + self.registers.c as u16, source_v);
+						}
+						Reg8Target::A16 => {
+							// consumed 2 extra bytes, bump
+							next_pc = next_pc.wrapping_add(2);
+							let addr = self.read_next_word();
+							self.bus.write_byte(addr, source_v);
+						}
 					}
 					next_pc
 				}
 				LoadType::Word(target, source) => {
 					let source_v = match source {
-						Reg16Source::D16 => self.read_next_word(),
+						Reg16Source::D16 => {
+							// consume 2 bytes, bump
+							next_pc = next_pc.wrapping_add(2);
+							self.read_next_word()
+						}
+						Reg16Source::HL => self.registers.get_hl(),
 					};
 					self.registers.set_16(&target, source_v, &mut self.sp);
-					self.pc.wrapping_add(3)
+					next_pc
 				}
 				LoadType::IndirectFromSP => {
 					let addr = self.read_next_word();
@@ -247,6 +297,18 @@ impl CPU {
 					self.pc.wrapping_add(3)
 				}
 			},
+			Instruction::LDHLSP => {
+				let e8 = self.read_next_byte() as i8;
+				let v = self.sp.wrapping_add(e8 as u16);
+
+				self.registers.f.zero = false;
+				self.registers.f.subtract = false;
+				self.registers.f.half_carry = (self.sp & 0x0F) + (e8 as u16 & 0x0F) > 0x0F;
+				self.registers.f.carry = (self.sp & 0xFF) + (e8 as u16 & 0xFF) > 0xFF;
+
+				self.registers.set_hl(v);
+				self.pc.wrapping_add(2)
+			}
 			// ARITHMETIC
 			Instruction::ADD(target) => {
 				let v = match target {
@@ -273,6 +335,17 @@ impl CPU {
 					_ => self.registers.value(&target, &self.bus),
 				};
 				self.registers.a = self.add_carry(v);
+				next_pc
+			}
+			Instruction::ADDSP => {
+				let e8 = self.read_next_byte() as i8;
+				// consumed 1 more byte, bump
+				next_pc = next_pc.wrapping_add(1);
+				self.registers.f.zero = false;
+				self.registers.f.subtract = false;
+				self.registers.f.half_carry = (self.sp & 0x0F) + (e8 as u16 & 0x0F) > 0x0F;
+				self.registers.f.carry = (self.sp & 0xFF) + (e8 as u16 & 0xFF) > 0xFF;
+				self.sp = self.sp.wrapping_add(e8 as u16);
 				next_pc
 			}
 			Instruction::SUB(target) => {
@@ -486,8 +559,6 @@ impl CPU {
 				self.registers.f.half_carry = false;
 				next_pc
 			}
-			// TODO: support more insturctions
-			_ => next_pc,
 		}
 	}
 	fn add(&mut self, value: u8) -> u8 {
@@ -535,7 +606,7 @@ impl CPU {
 		self.registers.f.zero = v2 == 0;
 		self.registers.f.subtract = true;
 		self.registers.f.carry = overflow1 | overflow2;
-		self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF);
+		self.registers.f.half_carry = (self.registers.a & 0xF) < (value & 0xF) + carry;
 		v2
 	}
 	fn and(&mut self, value: u8) {

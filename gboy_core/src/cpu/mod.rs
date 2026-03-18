@@ -1,11 +1,6 @@
-pub(crate) mod cpu;
+mod cpu;
+mod instruction;
+mod memory_bus;
+mod registers;
+
 pub(crate) use cpu::CPU;
-
-pub(crate) mod instruction;
-pub(crate) use instruction::{ArithmeticTarget, Instruction, JumpTest, StackTarget};
-
-pub(crate) mod registers;
-pub(crate) use registers::Registers;
-
-pub(crate) mod memory_bus;
-pub(crate) use memory_bus::MemoryBus;
