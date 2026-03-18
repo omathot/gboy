@@ -430,6 +430,32 @@ impl Instruction {
 				Reg8Target::A,
 				Reg8Source::HLINC,
 			))),
+			0x2B => Some(Instruction::DEC16(Reg16Target::HL)),
+			0x2C => Some(Instruction::INC(ArithmeticTarget::L)),
+			0x2D => Some(Instruction::DEC(ArithmeticTarget::L)),
+			0x2E => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::L,
+				Reg8Source::D8,
+			))),
+			0x2F => Some(Instruction::CPL),
+			0x30 => Some(Instruction::JR(JumpTest::NotCarry)),
+			0x31 => Some(Instruction::LD(LoadType::Word(
+				Reg16Target::SP,
+				Reg16Source::D16,
+			))),
+			0x32 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::HLDEC,
+				Reg8Source::A,
+			))),
+			0x33 => Some(Instruction::INC16(Reg16Target::SP)),
+			0x34 => Some(Instruction::INC(ArithmeticTarget::HL)),
+			0x35 => Some(Instruction::DEC(ArithmeticTarget::HL)),
+			0x36 => Some(Instruction::LD(LoadType::Byte(
+				Reg8Target::HLI,
+				Reg8Source::D8,
+			))),
+			0x37 => Some(Instruction::SCF),
+			0x38 => Some(Instruction::JR(JumpTest::Carry)),
 
 			// ADD
 			0x80 => Some(Instruction::ADD(ArithmeticTarget::B)),
