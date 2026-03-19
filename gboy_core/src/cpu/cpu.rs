@@ -289,7 +289,7 @@ impl CPU {
 					self.registers.set_16(&target, source_v, &mut self.sp);
 					next_pc
 				}
-				LoadType::IndirectFromSP => {
+				LoadType::FromSPI => {
 					let addr = self.read_next_word();
 					self.bus.write_byte(addr, (self.sp & 0xFF) as u8);
 					self.bus.write_byte(addr + 1, (self.sp >> 8) as u8);

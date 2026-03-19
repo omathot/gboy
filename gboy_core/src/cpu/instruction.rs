@@ -371,7 +371,7 @@ impl Instruction {
 				Reg8Source::D8,
 			))),
 			0x07 => Some(Instruction::RLCA),
-			0x08 => Some(Instruction::LD(LoadType::IndirectFromSP)),
+			0x08 => Some(Instruction::LD(LoadType::FromSPI)),
 			0x09 => Some(Instruction::ADD16(Reg16Target::BC)),
 			0x0A => Some(Instruction::LD(LoadType::Byte(
 				Reg8Target::A,
@@ -945,7 +945,7 @@ pub(crate) enum Reg16Source {
 pub(crate) enum LoadType {
 	Byte(Reg8Target, Reg8Source),
 	Word(Reg16Target, Reg16Source),
-	IndirectFromSP, // only opcode to store SP to arbitrary addr
+	FromSPI, // only opcode to store SP to arbitrary addr
 }
 
 pub(crate) enum StackTarget {
